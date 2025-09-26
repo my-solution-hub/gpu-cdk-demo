@@ -1,5 +1,6 @@
 import * as cdk from 'aws-cdk-lib';
 import * as ec2 from 'aws-cdk-lib/aws-ec2';
+import * as iam from 'aws-cdk-lib/aws-iam';
 import * as rds from 'aws-cdk-lib/aws-rds';
 import * as elbv2 from 'aws-cdk-lib/aws-elasticloadbalancingv2';
 import * as elbv2_targets from 'aws-cdk-lib/aws-elasticloadbalancingv2-targets';
@@ -51,6 +52,14 @@ export class CdkStack extends cdk.Stack {
       allowAllOutbound: true,
     });
 
+    // IAM Role for SSM access
+    const ssmRole = new iam.Role(this, 'SSMRole', {
+      assumedBy: new iam.ServicePrincipal('ec2.amazonaws.com'),
+      managedPolicies: [
+        iam.ManagedPolicy.fromAwsManagedPolicyName('AmazonSSMManagedInstanceCore'),
+      ],
+    });
+
     // Web Server (m7i.2xlarge = 8 cores, 32GB RAM)
     const webServer = new ec2.Instance(this, 'WebServer', {
       vpc,
@@ -60,10 +69,11 @@ export class CdkStack extends cdk.Stack {
         owners: ['099720109477'],
       }),
       securityGroup: webSg,
+      role: ssmRole,
       vpcSubnets: { subnetType: ec2.SubnetType.PRIVATE_WITH_EGRESS },
       blockDevices: [{
         deviceName: '/dev/sda1',
-        volume: ec2.BlockDeviceVolume.ebs(100, {
+        volume: ec2.BlockDeviceVolume.ebs(150, {
           volumeType: ec2.EbsDeviceVolumeType.GP3,
         }),
       }],
@@ -80,7 +90,14 @@ systemctl enable nginx`),
       instanceType: ec2.InstanceType.of(ec2.InstanceClass.G5, ec2.InstanceSize.XLARGE),
       machineImage: ec2.MachineImage.latestAmazonLinux2023(),
       securityGroup: gpuSg,
+      role: ssmRole,
       vpcSubnets: { subnetType: ec2.SubnetType.PRIVATE_WITH_EGRESS },
+      blockDevices: [{
+        deviceName: '/dev/xvda',
+        volume: ec2.BlockDeviceVolume.ebs(100, {
+          volumeType: ec2.EbsDeviceVolumeType.GP3,
+        }),
+      }],
     });
 
     // RDS MySQL (db.m7i.2xlarge = 8 cores, 32GB RAM, 100GB storage)
